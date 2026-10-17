@@ -1,0 +1,1775 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Симулятор производства — Валы</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    background: #0f1410; color: #d8e5d8;
+    display: flex; justify-content: center; padding: 12px;
+    height: 100vh; overflow: hidden;
+  }
+  #game {
+    width: 100%; max-width: 1400px;
+    display: grid; grid-template-columns: 1fr 340px;
+    gap: 12px; height: calc(100vh - 24px);
+  }
+  .panel {
+    background: linear-gradient(180deg, #1e2a20 0%, #18221a 100%);
+    border: 1px solid #2a3a2c; border-radius: 10px;
+    padding: 10px; overflow: hidden;
+    display: flex; flex-direction: column;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 4px 12px rgba(0,0,0,0.4);
+  }
+  h1 { font-size: 17px; color: #a8d88a; letter-spacing: 1px; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
+  h2 { font-size: 11px; margin-bottom: 8px; color: #7a9a80; text-transform: uppercase; letter-spacing: 1px; }
+
+  #shopWrap {
+    flex: 1; position: relative;
+    background: #0a100c;
+    border-radius: 8px; overflow: hidden;
+    border: 1px solid #1a2a1e;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #shop {
+    position: relative;
+    background: #16211a;
+    box-shadow: 0 0 40px rgba(0,0,0,0.8) inset;
+  }
+
+  .cell {
+    position: absolute;
+    background: #1e2a20;
+    border: 1px solid #16211a;
+    pointer-events: none;
+  }
+  .cell.alt { background: #1a241b; }
+  .cell.hover { background: rgba(255,207,90,0.35); border-color: #ffcf5a; }
+  .cell.invalid { background: rgba(226,74,74,0.35); border-color: #e24a4a; }
+
+  .storage-marker {
+    position: absolute; pointer-events: none;
+    border: 2px dashed #d4a838;
+    background: rgba(212, 168, 56, 0.08);
+    border-radius: 6px; z-index: 5;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 4px;
+    font-size: 11px; font-weight: bold; color: #ffcf5a;
+    text-transform: uppercase; letter-spacing: 1px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  }
+
+  .machine {
+    position: absolute;
+    pointer-events: auto; cursor: grab;
+    z-index: 10;
+    transition: filter 0.15s;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .machine:active { cursor: grabbing; }
+  .machine.dragging { z-index: 999; opacity: 0.85; }
+  .machine.ghost { opacity: 0.65; pointer-events: none; }
+  .machine.strike { filter: saturate(0.3) brightness(0.7); }
+  .machine .m-icon { width: 70%; height: 70%; display: block; }
+  .machine .m-name {
+    position: absolute; bottom: 1px; left: 0; right: 0;
+    text-align: center;
+    font-size: 9px; font-weight: bold; color: rgba(255,255,255,0.85);
+    text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+    pointer-events: none;
+    letter-spacing: 0.5px;
+    z-index: 5;
+  }
+
+  .machine.tech  { background: linear-gradient(180deg, #6a5a4a, #3a2a1a); border: 1px solid #8a6a3a; }
+  .machine.lathe { background: linear-gradient(180deg, #5a7a8c, #2a4a5c); border: 1px solid #7a9aac; }
+  .machine.mill  { background: linear-gradient(180deg, #7a5a8c, #4a2a5c); border: 1px solid #9a7aac; }
+  .machine.heat  { background: linear-gradient(180deg, #8c4a4a, #5c2a2a); border: 1px solid #ac6a6a; }
+  .machine.grind { background: linear-gradient(180deg, #5a8c5a, #2a5c3a); border: 1px solid #7aac7a; }
+
+  .m-progress-inner {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 5px;
+    background: rgba(14, 23, 18, 0.5);
+    z-index: 20;
+    overflow: hidden;
+  }
+  .m-progress-inner > div {
+    height: 100%;
+    background: linear-gradient(90deg, #4a90e2, #7ac0ff);
+    width: 0;
+    box-shadow: 0 0 6px rgba(122,192,255,0.6);
+  }
+
+  .status-dot {
+    position: absolute;
+    bottom: 3px; right: 3px;
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid #0e1712; z-index: 20;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  .status-dot.free { background: radial-gradient(circle at 30% 30%, #9be8ac, #4a9a5a); }
+  .status-dot.busy { background: radial-gradient(circle at 30% 30%, #7ac0ff, #2a6aaa); animation: pulse 1s infinite; }
+  .status-dot.reserved { background: radial-gradient(circle at 30% 30%, #ffcf5a, #a8840a); }
+  .status-dot.broke { background: radial-gradient(circle at 30% 30%, #ff8080, #a02020); }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+  .part {
+    position: absolute;
+    pointer-events: none;
+    z-index: 100;
+    background: linear-gradient(180deg, #8a6a3a 0%, #6a4a2a 100%);
+    border: 1px solid #a8884a;
+    border-radius: 4px;
+    box-shadow:
+      0 3px 6px rgba(0,0,0,0.7),
+      inset 0 1px 0 rgba(255,255,255,0.15),
+      inset 0 -2px 0 rgba(0,0,0,0.25);
+    padding: 2px 2px 3px 2px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .part::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(180deg, #a8884a, #8a6a3a);
+    border-bottom: 1px solid #5a3a1a;
+  }
+  .part .part-ops-inside {
+    margin-top: 5px;
+    font-size: 8px;
+    line-height: 1.15;
+    color: #f0e8d0;
+    font-family: 'Consolas', monospace;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+  .part .op-item {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    white-space: nowrap;
+  }
+  .part .op-num {
+    color: #b8a888;
+    font-size: 7px;
+    min-width: 8px;
+    flex-shrink: 0;
+  }
+  .part .op-name {
+    color: #f0e8d0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .part .op-item.done .op-name {
+    text-decoration: line-through;
+    color: #8a7a5a;
+  }
+  .part .op-item.done .op-num {
+    color: #6a5a3a;
+  }
+  .part .op-item.current .op-name {
+    color: #ffcf5a;
+    font-weight: bold;
+  }
+  .part .op-item.current .op-num {
+    color: #ffcf5a;
+  }
+
+  .part.moving {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    filter: drop-shadow(0 3px 4px rgba(0,0,0,0.9));
+  }
+  .part.moving::before { display: none; }
+  .part.moving .part-ops-inside { display: none; }
+  .part.moving svg { width: 100%; height: 100%; display: block; }
+
+  .orders { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; flex: 1; padding-right: 4px; }
+  .orders::-webkit-scrollbar { width: 6px; }
+  .orders::-webkit-scrollbar-track { background: #0e1712; border-radius: 3px; }
+  .orders::-webkit-scrollbar-thumb { background: #2a3a2c; border-radius: 3px; }
+
+  .order {
+    background: linear-gradient(180deg, #1e2a20, #18221a);
+    border: 1px solid #2a3a2c; border-left: 4px solid #d4a838;
+    border-radius: 6px; padding: 10px 12px; font-size: 12px;
+    flex-shrink: 0; position: relative; overflow: hidden;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  }
+  .order .title { font-weight: bold; color: #e8f0e0; margin-bottom: 6px; font-size: 13px; }
+  .order .chars { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+  .char {
+    font-size: 10px; padding: 2px 7px; border-radius: 6px;
+    background: #2a3a2c; color: #b8c8b8; font-weight: bold;
+    border: 1px solid #344a36;
+  }
+  .char.tol { background: #2a3e4a; color: #a8d0e8; border-color: #3a5464; }
+  .char.ra  { background: #2a4a30; color: #a8e0b8; border-color: #3a6440; }
+  .char.hrc { background: #4a2a2a; color: #ffb0b0; border-color: #6a3a3a; }
+  .char.key { background: #4a3a1a; color: #ffd87a; border-color: #6a5a2a; }
+  .order .chain { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; align-items: center; }
+  .chain-step {
+    font-size: 9px; padding: 3px 7px; border-radius: 8px;
+    background: #2a3a2c; color: #a8b8a8; font-weight: bold;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    border: 1px solid #344a36;
+  }
+  .chain-step.tech  { background: #5c4a2a; color: #ffd8a8; border-color: #7c6a4a; }
+  .chain-step.lathe { background: #2a4a5c; color: #a8d8ff; border-color: #3a6478; }
+  .chain-step.mill  { background: #4a2a5c; color: #d8a8ff; border-color: #643a78; }
+  .chain-step.heat  { background: #5c2a2a; color: #ffb0b0; border-color: #783a3a; }
+  .chain-step.grind { background: #2a5c3a; color: #a8ffb8; border-color: #3a784a; }
+  .chain-step.missing { background: #2a1d1d; color: #ff8080; border: 1px dashed #ff8080; }
+
+  .order .info { color: #8fa890; font-size: 11px; margin-bottom: 8px; }
+  .order .info b { color: #ffcf5a; }
+  .order .accept-btn {
+    width: 100%; padding: 8px;
+    background: linear-gradient(180deg, #5a8a4a, #3a6a2a);
+    color: #fff; border: 1px solid #7aaa5a;
+    border-radius: 6px; font-weight: bold; font-size: 12px;
+    cursor: pointer; letter-spacing: 1px;
+    text-transform: uppercase; transition: all 0.15s;
+  }
+  .order .accept-btn:hover { background: linear-gradient(180deg, #6a9a5a, #4a7a3a); }
+  .order .accept-btn:disabled {
+    background: #3a3a3a; color: #7a7a7a; border-color: #4a4a4a;
+    cursor: not-allowed;
+  }
+  .deadline { position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: #0e1712; }
+  .deadline > div { height: 100%; background: #6bcf7f; width: 100%; transition: width 0.1s linear; }
+  .deadline.warn > div { background: #ffcf5a; }
+  .deadline.crit > div { background: #e24a4a; }
+
+  .shop-item {
+    display: flex; align-items: center; gap: 10px;
+    background: linear-gradient(180deg, #1e2a20, #18221a);
+    border: 1px solid #2a3a2c; border-radius: 6px;
+    padding: 8px 10px; margin-bottom: 8px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .shop-item:hover { border-color: #d4a838; transform: translateY(-1px); }
+  .shop-item.disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+  .shop-icon { width: 44px; height: 44px; flex-shrink: 0; }
+  .shop-icon svg { width: 100%; height: 100%; }
+  .shop-name { font-size: 12px; font-weight: bold; color: #d8e8d0; }
+  .shop-price { font-size: 11px; color: #ffcf5a; font-weight: bold; }
+  .shop-hint { font-size: 10px; color: #7a9a80; margin-top: 2px; }
+
+  .log {
+    background: #0e1712; border-radius: 6px; padding: 8px;
+    height: 110px; overflow-y: auto; font-size: 11px; line-height: 1.4;
+    font-family: 'Consolas', monospace; border: 1px solid #2a3a2c;
+  }
+  .log::-webkit-scrollbar { width: 6px; }
+  .log::-webkit-scrollbar-track { background: #0e1712; }
+  .log::-webkit-scrollbar-thumb { background: #2a3a2c; border-radius: 3px; }
+  .log div { margin-bottom: 3px; }
+  .log .ok { color: #7acf8a; }
+  .log .bad { color: #e25a5a; }
+  .log .info { color: #7a9a80; }
+  .log .event { color: #ffcf5a; font-weight: bold; }
+
+  #hint {
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(180deg, #ffcf5a, #d4a838);
+    color: #1a2014; padding: 10px 22px; border-radius: 22px;
+    font-size: 14px; font-weight: bold;
+    pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 100;
+    box-shadow: 0 4px 16px rgba(255,207,90,0.4);
+  }
+  #hint.show { opacity: 1; }
+
+  #dragGhost {
+    position: fixed; pointer-events: none; z-index: 99999;
+    background: linear-gradient(180deg, #ffcf5a, #d4a838);
+    color: #1a2014; padding: 8px 14px; border-radius: 6px;
+    font-size: 12px; font-weight: bold;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+    transform: rotate(-3deg); display: none;
+  }
+
+  .hud-actions { display: flex; gap: 6px; }
+  .hud-btn {
+    background: linear-gradient(180deg, #2a4a3a, #1a3a2a);
+    color: #d8e8d0;
+    border: 1px solid #3a5a4a;
+    padding: 6px 12px; border-radius: 6px;
+    font-size: 12px; font-weight: bold;
+    cursor: pointer; transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .hud-btn:hover { border-color: #d4a838; color: #ffcf5a; }
+
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: linear-gradient(180deg, #1e2a20 0%, #18221a 100%);
+    border: 2px solid #d4a838;
+    border-radius: 12px; padding: 20px;
+    width: 460px; max-width: 90vw; max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    position: relative;
+  }
+  .modal h3 {
+    color: #ffcf5a; font-size: 18px; margin-bottom: 14px;
+    padding-bottom: 10px; border-bottom: 2px solid #2a3a2c;
+  }
+  .modal .close-btn {
+    position: absolute; top: 12px; right: 14px;
+    width: 32px; height: 32px;
+    background: #2a3a2c; color: #d8e8d0;
+    border: 1px solid #3a5a4a; border-radius: 50%;
+    font-size: 18px; font-weight: bold;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal .close-btn:hover { background: #6a2a1a; border-color: #e24a4a; color: #ffb0b0; }
+  .modal .money-info {
+    text-align: right; color: #7a9a80; font-size: 11px;
+    margin-bottom: 10px;
+  }
+  .modal .money-info b { color: #ffcf5a; }
+
+  .chart-panel {
+    background: #0e1712;
+    border-radius: 6px;
+    border: 1px solid #2a3a2c;
+    padding: 8px;
+  }
+  .profitability {
+    text-align: center;
+    font-size: 16px; font-weight: bold;
+    margin-bottom: 6px; padding: 5px;
+    border-radius: 4px; background: #1a2014;
+    font-family: 'Consolas', monospace;
+  }
+  .profitability.good { color: #4ae070; }
+  .profitability.bad  { color: #e05a5a; }
+  .profitability.zero { color: #ffcf5a; }
+
+  .bars {
+    display: flex; justify-content: space-around; align-items: flex-end;
+    height: 80px; padding: 0 10px; margin-bottom: 6px;
+    border-bottom: 1px solid #2a3a2c;
+  }
+  .bar-col {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 2px; flex: 1; height: 100%; justify-content: flex-end;
+  }
+  .bar {
+    width: 55%; max-width: 60px; min-height: 3px;
+    border-radius: 3px 3px 0 0;
+    transition: height 0.3s;
+  }
+  .bar.income  { background: linear-gradient(180deg, #4ae070, #2a9a4a); }
+  .bar.expense { background: linear-gradient(180deg, #e05a5a, #a02a2a); }
+  .bar-label { font-size: 9px; color: #7a9a80; text-transform: uppercase; }
+  .bar-value { font-size: 10px; font-weight: bold; font-family: 'Consolas', monospace; margin-top: 2px; }
+  .bar-value.income  { color: #4ae070; }
+  .bar-value.expense { color: #e05a5a; }
+
+  .profit-line {
+    text-align: center; font-size: 11px;
+    font-family: 'Consolas', monospace; color: #8fa890;
+    margin-bottom: 3px;
+  }
+  .profit-line b { font-size: 13px; }
+  .profit-line b.good { color: #4ae070; }
+  .profit-line b.bad  { color: #e05a5a; }
+
+  .capex-line {
+    text-align: center; font-size: 10px;
+    font-family: 'Consolas', monospace; color: #8fa0b8;
+    padding-top: 3px; border-top: 1px dashed #2a3a2c;
+  }
+  .capex-line b { color: #a8c0e0; }
+
+  .upkeep-line {
+    text-align: center; font-size: 10px;
+    font-family: 'Consolas', monospace; color: #e0a8a8;
+    padding-top: 3px; border-top: 1px dashed #2a3a2c;
+    margin-top: 3px;
+  }
+  .upkeep-line b { color: #ffa8a8; }
+
+  .queue-bars {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    height: 70px;
+    padding: 0 4px;
+    margin-top: 4px;
+    border-bottom: 1px solid #2a3a2c;
+    gap: 3px;
+  }
+  .queue-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 1;
+    height: 100%;
+    gap: 2px;
+  }
+  .queue-bar {
+    width: 80%;
+    min-height: 3px;
+    border-radius: 2px 2px 0 0;
+    transition: height 0.3s, background 0.3s;
+  }
+  .queue-bar.tech  { background: linear-gradient(180deg, #c8a878, #7a5a3a); }
+  .queue-bar.lathe { background: linear-gradient(180deg, #7ac0ff, #2a6aaa); }
+  .queue-bar.mill  { background: linear-gradient(180deg, #b8a8ff, #5a3a9c); }
+  .queue-bar.heat  { background: linear-gradient(180deg, #ff8a8a, #a03030); }
+  .queue-bar.grind { background: linear-gradient(180deg, #8affa8, #2a8a4a); }
+  .queue-count {
+    font-size: 10px;
+    font-weight: bold;
+    font-family: 'Consolas', monospace;
+    color: #d8e8d8;
+    line-height: 1;
+  }
+  .queue-label {
+    font-size: 8px;
+    color: #7a9a80;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    text-align: center;
+    line-height: 1;
+  }
+</style>
+</head>
+<body>
+<div id="game">
+  <div class="panel">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <h1>🏭 ЦЕХ №7 · ВАЛЫ</h1>
+      <div style="display:flex; gap:14px; align-items:center; font-size:12px;">
+        <div class="hud-actions">
+          <button class="hud-btn" id="openMachines">🛒 Станки</button>
+        </div>
+        <span>💰 <b id="money" style="color:#ffcf5a;">5000 ₽</b></span>
+        <span>🧑‍💼 <b id="techCount" style="color:#ffd8a8;">1</b></span>
+        <span>⭐ <b id="rep" style="color:#ffcf5a;">0</b></span>
+        <span>📦 <b id="stock" style="color:#ffcf5a;">0</b></span>
+      </div>
+    </div>
+    <div id="shopWrap">
+      <div id="shop">
+        <div id="hint"></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; flex-direction:column; gap:12px; height:100%; overflow:hidden;">
+    <div class="panel" style="flex:1; min-height:0;">
+      <h2>Заказы <span style="font-size:10px; color:#5a7a60; text-transform:none;">— нажми «Принять»</span></h2>
+      <div class="orders" id="orders"></div>
+    </div>
+
+    <div class="panel chart-panel">
+      <h2>📋 Очередь по операциям</h2>
+      <div class="queue-bars" id="queueBars"></div>
+    </div>
+
+    <div class="panel chart-panel">
+      <h2>📊 Рентабельность (60 сек)</h2>
+      <div class="profitability zero" id="profitPct">0%</div>
+      <div class="bars">
+        <div class="bar-col">
+          <div class="bar income" id="barIncome" style="height: 3px;"></div>
+          <div class="bar-label">Доход</div>
+          <div class="bar-value income" id="valIncome">+0 ₽</div>
+        </div>
+        <div class="bar-col">
+          <div class="bar expense" id="barExpense" style="height: 3px;"></div>
+          <div class="bar-label">Опер. расход</div>
+          <div class="bar-value expense" id="valExpense">−0 ₽</div>
+        </div>
+      </div>
+      <div class="profit-line">Опер. прибыль: <b id="valProfit" class="good">0 ₽</b></div>
+      <div class="capex-line">🏗 Капвложения: <b id="valCapex">−0 ₽</b></div>
+      <div class="upkeep-line">🏭 Содержание: <b id="valUpkeep">−0 ₽/10с</b></div>
+    </div>
+
+    <div class="panel" style="max-height:130px;">
+      <h2>Журнал</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+</div>
+
+<div id="dragGhost"></div>
+
+<div class="modal-overlay" id="modalMachines">
+  <div class="modal">
+    <button class="close-btn" data-close="modalMachines">✕</button>
+    <h3>🛒 Магазин</h3>
+    <div class="money-info">Баланс: <b id="modalMoney1">5000 ₽</b></div>
+    <div class="shop-item" id="buyTech">
+      <div class="shop-icon" id="iconTech"></div>
+      <div>
+        <div class="shop-name">Нанять технолога</div>
+        <div class="shop-price">800 ₽</div>
+        <div class="shop-hint">2×1 · содержание 20 ₽/10с</div>
+      </div>
+    </div>
+    <div class="shop-item" id="buyLathe">
+      <div class="shop-icon" id="iconLathe"></div>
+      <div>
+        <div class="shop-name">Токарный станок</div>
+        <div class="shop-price">1200 ₽</div>
+        <div class="shop-hint">2×1 · обточка 10с · 40 ₽/10с</div>
+      </div>
+    </div>
+    <div class="shop-item" id="buyMill">
+      <div class="shop-icon" id="iconMill"></div>
+      <div>
+        <div class="shop-name">Фрезерный станок</div>
+        <div class="shop-price">1600 ₽</div>
+        <div class="shop-hint">2×2 · паз 11с · 60 ₽/10с</div>
+      </div>
+    </div>
+    <div class="shop-item" id="buyHeat">
+      <div class="shop-icon" id="iconHeat"></div>
+      <div>
+        <div class="shop-name">Термопечь</div>
+        <div class="shop-price">1500 ₽</div>
+        <div class="shop-hint">1×1 · закалка 12с · 50 ₽/10с</div>
+      </div>
+    </div>
+    <div class="shop-item" id="buyGrind">
+      <div class="shop-icon" id="iconGrind"></div>
+      <div>
+        <div class="shop-name">Круглошлифовальный</div>
+        <div class="shop-price">2000 ₽</div>
+        <div class="shop-hint">2×1 · шлифовка 14с · 70 ₽/10с</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ================== КОНСТАНТЫ ================== */
+const CELL = 56;
+const GRID = 10;
+const SHOP_SIZE = CELL * GRID;
+const ORDER_LIFETIME = 180000;
+const PART_MOVE_MS_PER_CELL = 220;
+const DISPATCH_INTERVAL_MS = 250;
+const MAINTENANCE_INTERVAL = 10000;
+const CHART_WINDOW_MS = 60000;
+const CHART_UPDATE_MS = 500;
+
+/* ================== СОСТОЯНИЕ ================== */
+const state = {
+  money: 5000, reputation: 0, stock: 0,
+  machines: [], parts: [], orders: [],
+  nextOrderId: 1, nextMachineId: 1, nextPartId: 1,
+  log: [],
+  drag: null, placing: null,
+  storage: { col: 0, row: 8 },
+  movingParts: new Set(),
+  strike: false,
+  transactions: [],
+};
+
+/* ================== ТИПЫ СТАНКОВ ================== */
+const MACHINE_TYPES = {
+  tech:  { name: 'Технолог',           short: 'Технолог', baseTime: 5000,  price: 800,  w: 2, h: 1, upkeep: 20  },
+  lathe: { name: 'Токарный',           short: 'Токарка',  baseTime: 10000, price: 1200, w: 2, h: 1, upkeep: 40  },
+  mill:  { name: 'Фрезерный',          short: 'Фрезер',   baseTime: 11000, price: 1600, w: 2, h: 2, upkeep: 60  },
+  heat:  { name: 'Термопечь',          short: 'Термо',    baseTime: 12000, price: 1500, w: 1, h: 1, upkeep: 50  },
+  grind: { name: 'Круглошлифовальный', short: 'Шлифовка', baseTime: 14000, price: 2000, w: 2, h: 1, upkeep: 70  },
+};
+const QUEUE_ORDER = ['tech', 'lathe', 'mill', 'heat', 'grind'];
+
+/* ================== ТРАНЗАКЦИИ ================== */
+function recordTransaction(amount, type) {
+  const a = Number(amount);
+  if (!Number.isFinite(a)) return;
+  state.transactions.push({ t: Date.now(), amount: a, type });
+  const cutoff = Date.now() - CHART_WINDOW_MS - 10000;
+  state.transactions = state.transactions.filter(tx => tx.t >= cutoff && Number.isFinite(tx.amount));
+}
+function addMoney(amount, type = 'income') {
+  const a = Number(amount);
+  if (!Number.isFinite(a)) return;
+  state.money += a;
+  recordTransaction(a, type);
+}
+function spendMoney(amount, type = 'expense') {
+  const a = Number(amount);
+  if (!Number.isFinite(a)) return;
+  state.money -= a;
+  recordTransaction(-a, type);
+}
+
+/* ================== ХАРАКТЕРИСТИКИ ================== */
+const TOLERANCES = [6, 7, 8, 9, 10, 11, 12, 13, 14];
+const RA_VALUES  = [0.04, 0.08, 0.16, 0.32, 0.63, 1.25, 2.5, 5.0, 10.0, 16.0];
+
+function getFactoryLevel() {
+  return Math.max(0, state.machines.length - 1);
+}
+
+function getOrderWeights() {
+  const lvl = getFactoryLevel();
+  return {
+    simple:    Math.max(5, 60 - lvl * 8),
+    keyway:    Math.min(30, 20 + lvl * 2),
+    hardened:  Math.min(25, 15 + lvl * 2),
+    precision: Math.min(20, 5 + lvl * 3),
+    full:      Math.min(15, lvl * 2),
+  };
+}
+
+function pickOrderType() {
+  const w = getOrderWeights();
+  const total = Object.values(w).reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (const [key, weight] of Object.entries(w)) {
+    r -= weight;
+    if (r <= 0) return key;
+  }
+  return 'simple';
+}
+
+function randomShaftSpec() {
+  const type = pickOrderType();
+  let tol, ra, hardened = false, keyway = false;
+  switch (type) {
+    case 'simple':
+      tol = TOLERANCES[Math.floor(Math.random() * 5) + 5];
+      ra = RA_VALUES[Math.floor(Math.random() * 4) + 6];
+      break;
+    case 'keyway':
+      tol = TOLERANCES[Math.floor(Math.random() * 5) + 5];
+      ra = RA_VALUES[Math.floor(Math.random() * 4) + 6];
+      keyway = true;
+      break;
+    case 'hardened':
+      tol = TOLERANCES[Math.floor(Math.random() * 5) + 5];
+      ra = RA_VALUES[Math.floor(Math.random() * 4) + 6];
+      hardened = true;
+      break;
+    case 'precision':
+      tol = TOLERANCES[Math.floor(Math.random() * 4)];
+      ra = RA_VALUES[Math.floor(Math.random() * 4)];
+      break;
+    case 'full':
+      tol = TOLERANCES[Math.floor(Math.random() * 3)];
+      ra = RA_VALUES[Math.floor(Math.random() * 3)];
+      hardened = true;
+      keyway = true;
+      break;
+    default:
+      tol = 10; ra = 5.0;
+  }
+  return { tol, ra, hardened, keyway };
+}
+
+function buildRoute(spec) {
+  const route = ['tech', 'lathe'];
+  if (spec.keyway) route.push('mill');
+  if (spec.hardened) route.push('heat');
+  const needGrind = spec.hardened || spec.tol <= 7 || spec.ra <= 0.63;
+  if (needGrind) route.push('grind');
+  return route;
+}
+function calcReward(spec, route) {
+  let reward = 300;
+  reward += (15 - spec.tol) * 40;
+  reward += Math.round((3 - Math.log10(spec.ra)) * 80);
+  if (spec.hardened) reward += 500;
+  if (spec.keyway) reward += 300;
+  reward += (route.length - 1) * 150;
+  return Math.max(250, Math.round(reward / 50) * 50);
+}
+
+/* ================== ИКОНКИ ================== */
+const MACHINE_ICON = {
+  tech: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+    <rect x="8" y="28" width="44" height="16" rx="2" fill="#3a2a1a" opacity="0.6"/>
+    <circle cx="30" cy="18" r="9" fill="#d8b888"/>
+    <path d="M 21 14 Q 30 4 39 14" fill="#3a2a1a"/>
+    <rect x="18" y="28" width="24" height="16" rx="2" fill="#4a6a4a"/>
+    <rect x="24" y="32" width="12" height="8" rx="1" fill="#f0e8d0"/>
+  </svg>`,
+  lathe: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+    <rect x="6" y="36" width="48" height="14" rx="2" fill="#2a3a2a" opacity="0.7"/>
+    <rect x="10" y="20" width="40" height="20" rx="3" fill="#3a4a5c"/>
+    <circle cx="30" cy="30" r="10" fill="#8a3030" stroke="#5a1a1a" stroke-width="2"/>
+    <circle cx="30" cy="30" r="4" fill="#c04040"/>
+    <rect x="42" y="28" width="12" height="4" rx="1" fill="#d4a838"/>
+  </svg>`,
+  mill: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+    <rect x="8" y="38" width="44" height="14" rx="2" fill="#2a3a2a" opacity="0.7"/>
+    <rect x="20" y="10" width="20" height="30" rx="2" fill="#4a6a4a"/>
+    <rect x="22" y="6" width="16" height="8" rx="1" fill="#d4a838"/>
+    <rect x="28" y="32" width="4" height="12" fill="#a0a0a0"/>
+    <polygon points="26,44 34,44 33,50 27,50" fill="#c0c0c0"/>
+  </svg>`,
+  heat: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+    <rect x="10" y="14" width="40" height="38" rx="3" fill="#3a5c3a"/>
+    <rect x="18" y="24" width="24" height="18" rx="2" fill="#1a1a1a"/>
+    <rect x="20" y="26" width="20" height="14" rx="1" fill="#ff5500" opacity="0.9"/>
+    <circle cx="26" cy="33" r="2" fill="#ffcc00"/>
+    <circle cx="34" cy="33" r="2" fill="#ffcc00"/>
+    <rect x="26" y="6" width="8" height="10" fill="#2a2a2a"/>
+  </svg>`,
+  grind: `<svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+    <rect x="6" y="38" width="48" height="14" rx="2" fill="#2a3a2a" opacity="0.7"/>
+    <rect x="10" y="18" width="40" height="22" rx="3" fill="#4a7a4a"/>
+    <circle cx="24" cy="30" r="10" fill="#8a5a2a" stroke="#5a3a10" stroke-width="2"/>
+    <circle cx="24" cy="30" r="5" fill="#a87040"/>
+    <rect x="38" y="26" width="14" height="6" rx="1" fill="#a0a0a0"/>
+  </svg>`,
+};
+
+/* ================== ИКОНКА ВАЛА ================== */
+function partSVG(step, total, hasKeyway, keywayDone) {
+  const hue = step / Math.max(1, total);
+  const light = `hsl(${35 - hue * 15}, 40%, ${55 + hue * 20}%)`;
+  const mid   = `hsl(${35 - hue * 15}, 40%, ${42 + hue * 15}%)`;
+  const showKeyway = hasKeyway && keywayDone;
+  return `<svg viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+    <rect x="3" y="10" width="24" height="10" rx="2" fill="${mid}" stroke="${light}" stroke-width="1"/>
+    <ellipse cx="6" cy="15" rx="2" ry="5" fill="${light}"/>
+    <ellipse cx="24" cy="15" rx="2" ry="5" fill="${light}"/>
+    ${showKeyway ? `<rect x="12" y="13" width="8" height="4" rx="0.5" fill="#0e1712"/>` : ''}
+  </svg>`;
+}
+
+/* ================== РАЗМЕРЫ И КЛЕТКИ ================== */
+function machineSize(m) {
+  const t = MACHINE_TYPES[m.type];
+  if (!t) return { w: 1, h: 1 };
+  const swap = (m.rot === 90 || m.rot === 270);
+  return {
+    w: swap ? t.h : t.w,
+    h: swap ? t.w : t.h,
+  };
+}
+function getMachineCells(m) {
+  const { w, h } = machineSize(m);
+  const cells = [];
+  for (let dc = 0; dc < w; dc++) {
+    for (let dr = 0; dr < h; dr++) {
+      cells.push({ col: m.col + dc, row: m.row + dr });
+    }
+  }
+  return cells;
+}
+function isCellOccupiedByMachine(col, row, ignoreId = null) {
+  return state.machines.some(m => {
+    if (m.id === ignoreId) return false;
+    return getMachineCells(m).some(c => c.col === col && c.row === row);
+  });
+}
+function isAreaFree(col, row, w, h, ignoreId = null) {
+  if (col < 0 || row < 0 || col + w > GRID || row + h > GRID) return false;
+  for (let dc = 0; dc < w; dc++) {
+    for (let dr = 0; dr < h; dr++) {
+      const cc = col + dc, cr = row + dr;
+      if (cc >= state.storage.col && cc < state.storage.col + 2 &&
+          cr >= state.storage.row && cr < state.storage.row + 2) return false;
+      if (isCellOccupiedByMachine(cc, cr, ignoreId)) return false;
+    }
+  }
+  return true;
+}
+function isCellFreeForPart(col, row, ignoreId = null) {
+  if (col < 0 || row < 0 || col >= GRID || row >= GRID) return false;
+  if (isCellOccupiedByMachine(col, row)) return false;
+  if (state.parts.some(p => p.id !== ignoreId && p.col === col && p.row === row)) return false;
+  return true;
+}
+function findFreeSpotNearMachine(m) {
+  const cells = getMachineCells(m);
+  const candidates = new Set();
+  cells.forEach(c => {
+    [[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,-1],[1,-1],[-1,1]].forEach(([dc, dr]) => {
+      const nc = c.col + dc, nr = c.row + dr;
+      if (nc < 0 || nr < 0 || nc >= GRID || nr >= GRID) return;
+      if (cells.some(cc => cc.col === nc && cc.row === nr)) return;
+      candidates.add(`${nc},${nr}`);
+    });
+  });
+  for (const key of candidates) {
+    const [c, r] = key.split(',').map(Number);
+    if (isCellFreeForPart(c, r)) return { col: c, row: r };
+  }
+  return null;
+}
+function findEntryCellForPart(m, from) {
+  const cells = getMachineCells(m);
+  const candidates = new Set();
+  cells.forEach(c => {
+    [[0,1],[0,-1],[1,0],[-1,0],[1,1],[-1,-1],[1,-1],[-1,1]].forEach(([dc, dr]) => {
+      const nc = c.col + dc, nr = c.row + dr;
+      if (nc < 0 || nr < 0 || nc >= GRID || nr >= GRID) return;
+      if (cells.some(cc => cc.col === nc && cc.row === nr)) return;
+      candidates.add(`${nc},${nr}`);
+    });
+  });
+  let best = null, bestDist = Infinity;
+  for (const key of candidates) {
+    const [c, r] = key.split(',').map(Number);
+    if (!isCellFreeForPart(c, r)) continue;
+    const d = Math.abs(c - from.col) + Math.abs(r - from.row);
+    if (d < bestDist) { bestDist = d; best = { col: c, row: r }; }
+  }
+  return best;
+}
+
+/* ================== СКЛАД ================== */
+function findFreeStorageCell() {
+  for (let r = state.storage.row; r < state.storage.row + 2; r++) {
+    for (let c = state.storage.col; c < state.storage.col + 2; c++) {
+      if (isCellFreeForPart(c, r)) return { col: c, row: r };
+    }
+  }
+  return null;
+}
+
+/* ================== ПОЗИЦИИ ================== */
+function cellToScreen(col, row) {
+  return { x: col * CELL, y: row * CELL };
+}
+function screenToCell(px, py) {
+  return { col: Math.floor(px / CELL), row: Math.floor(py / CELL) };
+}
+
+/* ================== BFS ================== */
+function findPath(from, to, ignorePartId = null) {
+  if (from.col === to.col && from.row === to.row) return [];
+  const key = (c, r) => `${c},${r}`;
+  const blocked = new Set();
+  state.machines.forEach(m => {
+    getMachineCells(m).forEach(c => blocked.add(key(c.col, c.row)));
+  });
+  blocked.delete(key(to.col, to.row));
+  state.parts.forEach(p => {
+    if (p.id === ignorePartId) return;
+    blocked.add(key(p.col, p.row));
+  });
+
+  const queue = [{ col: from.col, row: from.row, path: [] }];
+  const visited = new Set([key(from.col, from.row)]);
+  while (queue.length > 0) {
+    const { col, row, path } = queue.shift();
+    if (col === to.col && row === to.row) return path;
+    const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+    for (const [dc, dr] of dirs) {
+      const nc = col + dc, nr = row + dr;
+      if (nc < 0 || nr < 0 || nc >= GRID || nr >= GRID) continue;
+      const k = key(nc, nr);
+      if (visited.has(k)) continue;
+      if (blocked.has(k)) continue;
+      visited.add(k);
+      queue.push({ col: nc, row: nr, path: [...path, { col: nc, row: nr }] });
+    }
+  }
+  return null;
+}
+
+/* ================== СЕТКА ================== */
+function buildGrid() {
+  const shop = document.getElementById('shop');
+  shop.style.width = SHOP_SIZE + 'px';
+  shop.style.height = SHOP_SIZE + 'px';
+  shop.querySelectorAll('.cell, .machine, .part, .storage-marker').forEach(el => el.remove());
+
+  for (let row = 0; row < GRID; row++) {
+    for (let col = 0; col < GRID; col++) {
+      const c = document.createElement('div');
+      c.className = 'cell' + ((col + row) % 2 ? ' alt' : '');
+      c.dataset.col = col;
+      c.dataset.row = row;
+      const s = cellToScreen(col, row);
+      c.style.left = s.x + 'px';
+      c.style.top  = s.y + 'px';
+      c.style.width  = CELL + 'px';
+      c.style.height = CELL + 'px';
+      shop.appendChild(c);
+    }
+  }
+  drawStorageMarker();
+  renderMachines();
+  renderParts();
+}
+function drawStorageMarker() {
+  const shop = document.getElementById('shop');
+  const old = shop.querySelector('.storage-marker');
+  if (old) old.remove();
+  const { col, row } = state.storage;
+  const s = cellToScreen(col, row);
+  const el = document.createElement('div');
+  el.className = 'storage-marker';
+  el.textContent = 'СКЛАД';
+  el.style.left = s.x + 'px';
+  el.style.top  = s.y + 'px';
+  el.style.width  = (CELL * 2) + 'px';
+  el.style.height = (CELL * 2) + 'px';
+  shop.appendChild(el);
+}
+
+/* ================== ОТРИСОВКА ================== */
+function renderMachines() {
+  const shop = document.getElementById('shop');
+  shop.querySelectorAll('.machine').forEach(el => el.remove());
+  state.machines.forEach(m => {
+    const el = document.createElement('div');
+    el.className = 'machine ' + m.type + (state.strike ? ' strike' : '');
+    el.dataset.id = m.id;
+    el.dataset.type = m.type;
+    const { w, h } = machineSize(m);
+    const s = cellToScreen(m.col, m.row);
+    el.style.left = s.x + 'px';
+    el.style.top  = s.y + 'px';
+    el.style.width  = (CELL * w) + 'px';
+    el.style.height = (CELL * h) + 'px';
+    el.style.zIndex = 10 + (m.col + m.row);
+
+    const icon = document.createElement('div');
+    icon.className = 'm-icon';
+    icon.innerHTML = MACHINE_ICON[m.type] || '';
+    el.appendChild(icon);
+
+    const name = document.createElement('div');
+    name.className = 'm-name';
+    name.textContent = MACHINE_TYPES[m.type] ? MACHINE_TYPES[m.type].short : '?';
+    el.appendChild(name);
+
+    if (m.busy && m.task) {
+      const pr = document.createElement('div');
+      pr.className = 'm-progress-inner';
+      pr.innerHTML = `<div style="width:${m.progress * 100}%"></div>`;
+      el.appendChild(pr);
+    }
+
+    const dot = document.createElement('div');
+    let dotClass = 'free';
+    if (state.strike) dotClass = 'broke';
+    else if (m.busy) dotClass = 'busy';
+    else if (m.reserved) dotClass = 'reserved';
+    dot.className = 'status-dot ' + dotClass;
+    el.appendChild(dot);
+
+    el.addEventListener('mousedown', (e) => {
+      if (state.placing) return;
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      startMachineDrag(m, e);
+    });
+    el.addEventListener('contextmenu', (e) => {
+      if (state.placing) return;
+      e.preventDefault();
+      if (m.busy) return;
+      const newRot = (m.rot + 90) % 360;
+      const test = { ...m, rot: newRot };
+      const { w, h } = machineSize(test);
+      if (isAreaFree(m.col, m.row, w, h, m.id)) {
+        m.rot = newRot;
+        renderMachines();
+        setTimeout(dispatch, 100);
+      }
+    });
+
+    shop.appendChild(el);
+  });
+}
+
+function renderParts() {
+  const shop = document.getElementById('shop');
+  shop.querySelectorAll('.part').forEach(el => {
+    const id = parseInt(el.dataset.id);
+    if (!state.movingParts.has(id)) el.remove();
+  });
+  state.parts.forEach(p => {
+    if (state.movingParts.has(p.id)) return;
+    if (shop.querySelector(`.part[data-id="${p.id}"]`)) return;
+
+    const el = document.createElement('div');
+    el.className = 'part';
+    el.dataset.id = p.id;
+
+    const s = cellToScreen(p.col, p.row);
+    el.style.left = (s.x + 2) + 'px';
+    el.style.top  = (s.y + 2) + 'px';
+    el.style.width  = (CELL - 4) + 'px';
+    el.style.height = (CELL - 4) + 'px';
+    el.style.zIndex = 100 + (p.col + p.row) * 2 + (p.id % 2);
+
+    const ops = document.createElement('div');
+    ops.className = 'part-ops-inside';
+    const route = p.order.route;
+    ops.innerHTML = route.map((op, idx) => {
+      let cls = 'op-item';
+      if (idx < p.step) cls += ' done';
+      else if (idx === p.step) cls += ' current';
+      return `<div class="${cls}"><span class="op-num">${idx + 1}.</span><span class="op-name">${MACHINE_TYPES[op].short}</span></div>`;
+    }).join('');
+    el.appendChild(ops);
+
+    shop.appendChild(el);
+  });
+}
+
+/* ================== ОЧЕРЕДЬ ================== */
+function getQueueCounts() {
+  const counts = {};
+  QUEUE_ORDER.forEach(t => { counts[t] = 0; });
+  state.parts.forEach(p => {
+    if (state.movingParts.has(p.id)) return;
+    if (p.step >= p.order.route.length) return;
+    const opType = p.order.route[p.step];
+    if (counts[opType] !== undefined) counts[opType]++;
+  });
+  return counts;
+}
+
+function renderQueue() {
+  const el = document.getElementById('queueBars');
+  if (!el) return;
+  const counts = getQueueCounts();
+  const maxCount = Math.max(1, ...Object.values(counts));
+  el.innerHTML = QUEUE_ORDER.map(t => {
+    const cnt = counts[t];
+    const pct = cnt / maxCount;
+    const height = Math.max(3, pct * 50);
+    return `
+      <div class="queue-col">
+        <div class="queue-count" style="color:${cnt > 0 ? '#ffcf5a' : '#5a7a60'}">${cnt}</div>
+        <div class="queue-bar ${t}" style="height:${height}px;"></div>
+        <div class="queue-label">${MACHINE_TYPES[t].short}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ================== ДИСПЕТЧЕР ================== */
+function acceptOrder(order) {
+  const mtypes = new Set(state.machines.map(m => m.type));
+  const missing = order.route.filter(op => !mtypes.has(op));
+  if (missing.length > 0) {
+    return log(`❌ Не хватает станков: ${missing.map(m => MACHINE_TYPES[m].short).join(', ')}`, 'bad');
+  }
+  state.orders = state.orders.filter(o => o.id !== order.id);
+  renderOrders();
+
+  const spot = findFreeStorageCell();
+  if (!spot) {
+    state.orders.push(order);
+    renderOrders();
+    return log(`❌ Склад переполнен (макс. 4 заготовки)`, 'bad');
+  }
+
+  const part = {
+    id: state.nextPartId++,
+    order, step: 0, col: spot.col, row: spot.row,
+    acceptedAt: Date.now(),
+  };
+  state.parts.push(part);
+  log(`✅ Принят заказ: «${order.title}» на склад`, 'ok');
+  renderParts();
+  renderQueue();
+  setTimeout(dispatch, 50);
+}
+
+function getValidMachines(part, opType) {
+  return state.machines.filter(m => {
+    if (m.type !== opType) return false;
+    if (m.busy || m.reserved) return false;
+    if (state.strike) return false;
+    return true;
+  });
+}
+
+function dispatchOne() {
+  if (state.movingParts.size > 0) return false;
+  if (state.strike) return false;
+
+  const candidates = state.parts.filter(p => !state.movingParts.has(p.id));
+  candidates.sort((a, b) => a.acceptedAt - b.acceptedAt);
+
+  for (const part of candidates) {
+    if (part.step >= part.order.route.length) continue;
+    const opType = part.order.route[part.step];
+    const valid = getValidMachines(part, opType);
+    if (valid.length === 0) continue;
+
+    let best = null;
+    let bestEntry = null;
+    let bestPath = null;
+    let bestLen = Infinity;
+
+    valid.forEach(m => {
+      const entry = findEntryCellForPart(m, { col: part.col, row: part.row });
+      if (!entry) return;
+      const path = findPath({ col: part.col, row: part.row }, entry, part.id);
+      if (path === null) return;
+      if (path.length < bestLen) {
+        bestLen = path.length;
+        best = m;
+        bestEntry = entry;
+        bestPath = path;
+      }
+    });
+
+    if (!best) continue;
+
+    if (bestPath.length === 0) {
+      startProcessing(part, best);
+      return true;
+    }
+
+    best.reserved = true;
+    state.movingParts.add(part.id);
+    log(`➡️ «${part.order.title}» → ${MACHINE_TYPES[best.type].short}`, 'info');
+    animatePartTravel(part, bestPath, () => {
+      state.movingParts.delete(part.id);
+      part.col = bestEntry.col;
+      part.row = bestEntry.row;
+      startProcessing(part, best);
+    });
+    return true;
+  }
+  return false;
+}
+
+function dispatch() { dispatchOne(); renderParts(); renderQueue(); }
+
+function sanitize() {
+  let changed = false;
+  state.machines.forEach(m => {
+    if (m.reserved && !m.busy) {
+      const someoneMoving = [...state.movingParts].some(pid => {
+        const p = state.parts.find(x => x.id === pid);
+        return p && p.order.route[p.step] === m.type;
+      });
+      if (!someoneMoving) { m.reserved = false; changed = true; }
+    }
+  });
+  if (changed) renderMachines();
+}
+
+/* ================== АНИМАЦИЯ ================== */
+function animatePartTravel(part, path, onDone) {
+  const cellPath = [{ col: part.col, row: part.row }, ...path];
+  let idx = 0;
+  let lastT = performance.now();
+  let acc = 0;
+
+  const oldEl = document.querySelector(`.part[data-id="${part.id}"]`);
+  if (oldEl) oldEl.remove();
+
+  const partEl = document.createElement('div');
+  partEl.className = 'part moving';
+  partEl.dataset.id = part.id;
+  const s0 = cellToScreen(part.col, part.row);
+  partEl.style.left = (s0.x + 6) + 'px';
+  partEl.style.top  = (s0.y + 6) + 'px';
+  partEl.style.width  = (CELL - 12) + 'px';
+  partEl.style.height = (CELL - 12) + 'px';
+  partEl.style.zIndex = 200;
+  const keywayDone = part.order.spec.keyway && part.order.route.indexOf('mill') < part.step;
+  partEl.innerHTML = partSVG(part.step, part.order.route.length, part.order.spec.keyway, keywayDone);
+  document.getElementById('shop').appendChild(partEl);
+
+  function step(t) {
+    const dt = Math.min(50, t - lastT);
+    lastT = t;
+    if (idx >= cellPath.length - 1) {
+      const end = cellToScreen(part.col, part.row);
+      partEl.style.left = (end.x + 6) + 'px';
+      partEl.style.top  = (end.y + 6) + 'px';
+      onDone();
+      return;
+    }
+    const from = cellToScreen(cellPath[idx].col, cellPath[idx].row);
+    const to = cellToScreen(cellPath[idx + 1].col, cellPath[idx + 1].row);
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const speed = CELL / PART_MOVE_MS_PER_CELL;
+    acc += speed * dt;
+    if (acc >= dist) {
+      acc -= dist;
+      idx++;
+      part.col = cellPath[idx].col;
+      part.row = cellPath[idx].row;
+      partEl.style.left = (to.x + 6) + 'px';
+      partEl.style.top  = (to.y + 6) + 'px';
+    } else {
+      const k = acc / dist;
+      partEl.style.left = (from.x + dx * k + 6) + 'px';
+      partEl.style.top  = (from.y + dy * k + 6) + 'px';
+    }
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+/* ================== ОБРАБОТКА ================== */
+function startProcessing(part, machine) {
+  machine.reserved = false;
+  state.parts = state.parts.filter(p => p.id !== part.id);
+  const el = document.querySelector(`.part[data-id="${part.id}"]`);
+  if (el) el.remove();
+
+  machine.busy = true;
+  machine.progress = 0;
+  machine.task = { part, duration: MACHINE_TYPES[machine.type].baseTime, startedAt: Date.now() };
+  log(`⚙️ ${MACHINE_TYPES[machine.type].short}: «${part.order.title}» (${part.step + 1}/${part.order.route.length})`, 'info');
+  renderMachines();
+  renderQueue();
+}
+
+function finishTask(machine) {
+  const t = machine.task;
+  machine.busy = false;
+  machine.task = null;
+  machine.progress = 0;
+  const part = t.part;
+  part.step++;
+
+  const spot = findFreeSpotNearMachine(machine);
+  if (spot) { part.col = spot.col; part.row = spot.row; }
+  else { part.col = machine.col; part.row = machine.row; }
+
+  if (part.step >= part.order.route.length) {
+    completeOrder(part);
+  } else {
+    state.parts.push(part);
+    log(`✅ «${part.order.title}» → ${MACHINE_TYPES[part.order.route[part.step]].short}`, 'ok');
+    renderParts();
+  }
+  renderMachines();
+  renderQueue();
+  setTimeout(dispatch, 50);
+}
+
+function completeOrder(part) {
+  const reward = part.order.reward;
+  addMoney(reward, 'income');
+  state.reputation += part.order.baseRep;
+  state.stock++;
+  state.parts = state.parts.filter(p => p.id !== part.id);
+  log(`🏆 ГОТОВО! «${part.order.title}» · +${reward} ₽`, 'ok');
+  updateHUD();
+  renderParts();
+  renderQueue();
+}
+
+/* ================== СОДЕРЖАНИЕ ================== */
+function totalUpkeep() {
+  return state.machines.reduce((sum, m) => {
+    const u = MACHINE_TYPES[m.type]?.upkeep;
+    return sum + (Number.isFinite(u) ? u : 0);
+  }, 0);
+}
+
+function payMaintenance() {
+  if (state.machines.length === 0) return;
+  if (!Number.isFinite(state.money)) state.money = 0;
+  const total = totalUpkeep();
+  if (total <= 0) return;
+  if (state.money >= total) {
+    spendMoney(total, 'expense');
+    if (state.strike) {
+      state.strike = false;
+      log(`✅ Станки снова работают. Содержание: −${total} ₽`, 'ok');
+    } else {
+      log(`💸 Содержание: −${total} ₽ (${state.machines.length} ед.)`, 'info');
+    }
+  } else {
+    if (!state.strike) {
+      log(`⚠️ Нет денег на содержание! Все станки встали.`, 'bad');
+    }
+    state.strike = true;
+  }
+  updateHUD();
+  renderMachines();
+}
+
+/* ================== DRAG СТАНКОВ ================== */
+function startMachineDrag(machine, e) {
+  const shop = document.getElementById('shop');
+  const shopRect = shop.getBoundingClientRect();
+  const el = document.querySelector(`.machine[data-id="${machine.id}"]`);
+  if (!el) return;
+
+  const startX = e.clientX, startY = e.clientY;
+  let moved = false;
+  let previewRot = machine.rot;
+  let currentPos = { col: machine.col, row: machine.row };
+
+  const offsetX = (e.clientX - shopRect.left) - machine.col * CELL;
+  const offsetY = (e.clientY - shopRect.top)  - machine.row * CELL;
+
+  const ghost = document.createElement('div');
+  ghost.className = 'machine ghost ' + machine.type;
+  ghost.innerHTML = `<div class="m-icon">${MACHINE_ICON[machine.type] || ''}</div>`;
+  ghost.style.pointerEvents = 'none';
+
+  const updateGhost = () => {
+    const preview = { ...machine, col: currentPos.col, row: currentPos.row, rot: previewRot };
+    const { w, h } = machineSize(preview);
+    ghost.style.left = (currentPos.col * CELL) + 'px';
+    ghost.style.top  = (currentPos.row * CELL) + 'px';
+    ghost.style.width  = (CELL * w) + 'px';
+    ghost.style.height = (CELL * h) + 'px';
+    document.querySelectorAll('.cell.hover, .cell.invalid').forEach(c => c.classList.remove('hover', 'invalid'));
+    const ok = isAreaFree(currentPos.col, currentPos.row, w, h, machine.id);
+    for (let dc = 0; dc < w; dc++) {
+      for (let dr = 0; dr < h; dr++) {
+        const c = currentPos.col + dc, r = currentPos.row + dr;
+        const cellEl = shop.querySelector(`.cell[data-col="${c}"][data-row="${r}"]`);
+        if (cellEl) cellEl.classList.add(ok ? 'hover' : 'invalid');
+      }
+    }
+  };
+
+  const onMove = (ev) => {
+    if (!moved && (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 4)) {
+      moved = true;
+      el.style.opacity = '0.3';
+      shop.appendChild(ghost);
+      updateGhost();
+    }
+    if (!moved) return;
+    const px = ev.clientX - shopRect.left - offsetX;
+    const py = ev.clientY - shopRect.top  - offsetY;
+    const { col, row } = screenToCell(px, py);
+    currentPos = { col, row };
+    updateGhost();
+  };
+
+  const onRightClick = (ev) => {
+    if (!moved) return;
+    ev.preventDefault();
+    previewRot = (previewRot + 90) % 360;
+    updateGhost();
+  };
+
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('contextmenu', onRightClick);
+    document.querySelectorAll('.cell.hover, .cell.invalid').forEach(c => c.classList.remove('hover', 'invalid'));
+    if (moved) {
+      ghost.remove();
+      el.style.opacity = '';
+      const { w, h } = machineSize({ ...machine, rot: previewRot });
+      if (isAreaFree(currentPos.col, currentPos.row, w, h, machine.id)) {
+        machine.col = currentPos.col;
+        machine.row = currentPos.row;
+        machine.rot = previewRot;
+      }
+    }
+    renderMachines();
+    setTimeout(dispatch, 100);
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('contextmenu', onRightClick);
+}
+
+/* ================== ЗАКАЗЫ ================== */
+function spawnOrder() {
+  const spec = randomShaftSpec();
+  const route = buildRoute(spec);
+  const reward = calcReward(spec, route);
+  const baseRep = 1 + Math.floor(route.length / 2) + (spec.hardened ? 2 : 0) + (spec.keyway ? 1 : 0);
+  const title = shaftTitle(spec);
+  const order = {
+    id: state.nextOrderId++,
+    title, spec, route, reward, baseRep,
+    createdAt: Date.now(), lifetime: ORDER_LIFETIME,
+  };
+  state.orders.push(order);
+  log(`📋 Заказ: ${title}`, 'info');
+  renderOrders();
+}
+
+function shaftTitle(spec) {
+  const parts = ['Вал'];
+  if (spec.keyway) parts.push('со шпоночным пазом');
+  if (spec.hardened) parts.push('закалённый');
+  if (spec.tol <= 7) parts.push('точный');
+  return parts.join(' ');
+}
+
+function renderOrders() {
+  const el = document.getElementById('orders');
+  el.innerHTML = '';
+  if (state.orders.length === 0) {
+    el.innerHTML = '<div style="color:#5a7a60;font-size:11px;text-align:center;padding:8px;">Заказов нет...</div>';
+    return;
+  }
+  const mtypes = new Set(state.machines.map(m => m.type));
+  state.orders.forEach(o => {
+    const div = document.createElement('div');
+    div.className = 'order';
+    div.dataset.id = o.id;
+    const missing = o.route.filter(op => !mtypes.has(op));
+    const hasAll = missing.length === 0;
+    const chainHtml = o.route.map(op => {
+      const has = mtypes.has(op);
+      return `<span class="chain-step ${op}${has?'':' missing'}">${MACHINE_TYPES[op].short}</span>`;
+    }).join('<span style="color:#5a7a60;font-size:10px;">→</span>');
+
+    div.innerHTML = `
+      <div class="title">${o.title}</div>
+      <div class="chars">
+        <span class="char tol">h${o.spec.tol}</span>
+        <span class="char ra">Ra ${o.spec.ra}</span>
+        <span class="char hrc">${o.spec.hardened ? '40–55 HRC' : 'поставка'}</span>
+        ${o.spec.keyway ? '<span class="char key">🔑 паз</span>' : ''}
+      </div>
+      <div class="chain">${chainHtml}</div>
+      <div class="info">💰 <b>${o.reward} ₽</b> · ⭐ +${o.baseRep}</div>
+      <button class="accept-btn" ${hasAll ? '' : 'disabled'}>
+        ${hasAll ? '▶ Принять' : '❌ Нет станков'}
+      </button>
+      <div class="deadline"><div></div></div>
+    `;
+    const btn = div.querySelector('.accept-btn');
+    if (hasAll) btn.addEventListener('click', () => acceptOrder(o));
+    el.appendChild(div);
+  });
+}
+
+function tickOrders() {
+  const now = Date.now();
+  const before = state.orders.length;
+  state.orders = state.orders.filter(o => now - o.createdAt < o.lifetime);
+  if (state.orders.length !== before) renderOrders();
+}
+function updateDeadlines() {
+  const now = Date.now();
+  document.querySelectorAll('.order').forEach(el => {
+    const o = state.orders.find(x => x.id === parseInt(el.dataset.id));
+    if (!o) return;
+    const remain = 1 - (now - o.createdAt) / o.lifetime;
+    const bar = el.querySelector('.deadline > div');
+    const wrap = el.querySelector('.deadline');
+    if (bar) bar.style.width = Math.max(0, remain * 100) + '%';
+    if (wrap) {
+      wrap.classList.toggle('warn', remain < 0.5 && remain >= 0.25);
+      wrap.classList.toggle('crit', remain < 0.25);
+    }
+  });
+}
+
+/* ================== ДИАГРАММА ================== */
+function drawChart() {
+  if (!Number.isFinite(state.money)) state.money = 0;
+  const now = Date.now();
+  const cutoff = now - CHART_WINDOW_MS;
+  const txs = state.transactions.filter(tx => tx.t >= cutoff);
+  let income = 0, expense = 0, capex = 0;
+  txs.forEach(tx => {
+    if (!Number.isFinite(tx.amount)) return;
+    if (tx.type === 'income') income += tx.amount;
+    else if (tx.type === 'expense') expense += -tx.amount;
+    else if (tx.type === 'capex') capex += -tx.amount;
+    else if (tx.type === 'capex_refund') capex -= tx.amount;
+  });
+  const profit = income - expense;
+  const maxVal = Math.max(income, expense, 1);
+  const H_MAX = 72;
+  const incH = income > 0 ? Math.max(4, (income / maxVal) * H_MAX) : 3;
+  const expH = expense > 0 ? Math.max(4, (expense / maxVal) * H_MAX) : 3;
+  document.getElementById('barIncome').style.height = incH + 'px';
+  document.getElementById('barExpense').style.height = expH + 'px';
+  document.getElementById('valIncome').textContent = '+' + income.toLocaleString('ru-RU') + ' ₽';
+  document.getElementById('valExpense').textContent = '−' + expense.toLocaleString('ru-RU') + ' ₽';
+  const profitEl = document.getElementById('valProfit');
+  profitEl.textContent = (profit >= 0 ? '+' : '') + profit.toLocaleString('ru-RU') + ' ₽';
+  profitEl.className = profit >= 0 ? 'good' : 'bad';
+  document.getElementById('valCapex').textContent = (capex >= 0 ? '−' : '+') + Math.abs(capex).toLocaleString('ru-RU') + ' ₽';
+  const upEl = document.getElementById('valUpkeep');
+  if (upEl) upEl.textContent = '−' + totalUpkeep().toLocaleString('ru-RU') + ' ₽/10с';
+  const profitPctEl = document.getElementById('profitPct');
+  let pct = 0;
+  if (income > 0) pct = Math.round((profit / income) * 100);
+  else if (expense > 0) pct = -100;
+  profitPctEl.textContent = (pct >= 0 ? '+' : '') + pct + '%';
+  profitPctEl.className = 'profitability ' + (pct > 5 ? 'good' : (pct < -5 ? 'bad' : 'zero'));
+}
+
+/* ================== МОДАЛЬНОЕ ОКНО ================== */
+function openModal(id) {
+  document.getElementById(id).classList.add('show');
+  updateModalMoney();
+}
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function updateModalMoney() {
+  const m1 = document.getElementById('modalMoney1');
+  if (m1) m1.textContent = fmt(state.money);
+}
+
+/* ================== РАЗМЕЩЕНИЕ СТАНКОВ ================== */
+function startPlacing(type) {
+  if (state.placing) return;
+  const price = MACHINE_TYPES[type].price;
+  if (state.money < price) return log('Недостаточно денег', 'bad');
+  spendMoney(price, 'capex');
+  updateHUD();
+  updateModalMoney();
+  state.placing = { type, rot: 0 };
+  closeModal('modalMachines');
+
+  const shop = document.getElementById('shop');
+  const ghost = document.createElement('div');
+  ghost.className = 'machine ghost ' + type;
+  const t = MACHINE_TYPES[type];
+  ghost.innerHTML = `<div class="m-icon">${MACHINE_ICON[type]}</div><div class="m-name">${t.short}</div>`;
+  ghost.style.pointerEvents = 'none';
+  shop.appendChild(ghost);
+
+  let currentPos = { col: 0, row: 0 };
+  let currentRot = 0;
+
+  const redrawGhost = () => {
+    const swap = (currentRot === 90 || currentRot === 270);
+    const w = swap ? t.h : t.w;
+    const h = swap ? t.w : t.h;
+    const s = cellToScreen(currentPos.col, currentPos.row);
+    ghost.style.left = s.x + 'px';
+    ghost.style.top  = s.y + 'px';
+    ghost.style.width  = (CELL * w) + 'px';
+    ghost.style.height = (CELL * h) + 'px';
+    document.querySelectorAll('.cell.hover, .cell.invalid').forEach(c => c.classList.remove('hover', 'invalid'));
+    const ok = isAreaFree(currentPos.col, currentPos.row, w, h);
+    for (let dc = 0; dc < w; dc++) {
+      for (let dr = 0; dr < h; dr++) {
+        const c = currentPos.col + dc, r = currentPos.row + dr;
+        const cellEl = shop.querySelector(`.cell[data-col="${c}"][data-row="${r}"]`);
+        if (cellEl) cellEl.classList.add(ok ? 'hover' : 'invalid');
+      }
+    }
+  };
+
+  const onMove = (ev) => {
+    const shopRect = shop.getBoundingClientRect();
+    const px = ev.clientX - shopRect.left;
+    const py = ev.clientY - shopRect.top;
+    const swap = (currentRot === 90 || currentRot === 270);
+    const w = swap ? t.h : t.w;
+    const h = swap ? t.w : t.h;
+    const { col, row } = screenToCell(px - w * CELL / 2, py - h * CELL / 2);
+    currentPos = { col, row };
+    redrawGhost();
+  };
+
+  const onClick = (ev) => {
+    if (ev.button !== 0) return;
+    if (ev.target.closest('.modal') || ev.target.closest('.hud-btn')) return;
+    ev.stopPropagation();
+    const swap = (currentRot === 90 || currentRot === 270);
+    const w = swap ? t.h : t.w;
+    const h = swap ? t.w : t.h;
+    if (!isAreaFree(currentPos.col, currentPos.row, w, h)) {
+      showHint('Место занято');
+      return;
+    }
+    state.machines.push({
+      id: state.nextMachineId++, type,
+      col: currentPos.col, row: currentPos.row, rot: currentRot,
+      busy: false, reserved: false, progress: 0, task: null,
+    });
+    log(`🛒 ${MACHINE_TYPES[type].name} установлен`, 'ok');
+    cleanup();
+    renderMachines();
+    renderOrders();
+    updateHUD();
+  };
+
+  const onRightClick = (ev) => {
+    if (ev.target.closest('.modal') || ev.target.closest('.hud-btn')) return;
+    ev.preventDefault();
+    currentRot = (currentRot + 90) % 360;
+    redrawGhost();
+  };
+
+  const onKey = (ev) => {
+    if (ev.key === 'Escape') {
+      state.money += price;
+      recordTransaction(price, 'capex_refund');
+      log('Покупка отменена', 'info');
+      cleanup();
+    }
+  };
+
+  function cleanup() {
+    ghost.remove();
+    document.querySelectorAll('.cell.hover, .cell.invalid').forEach(c => c.classList.remove('hover', 'invalid'));
+    hideHint();
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('click', onClick);
+    document.removeEventListener('contextmenu', onRightClick);
+    document.removeEventListener('keydown', onKey);
+    state.placing = null;
+    updateHUD();
+    updateModalMoney();
+  }
+
+  showHint('ЛКМ — поставить, ПКМ — повернуть, ESC — отмена');
+  redrawGhost();
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('click', onClick);
+  document.addEventListener('contextmenu', onRightClick);
+  document.addEventListener('keydown', onKey);
+}
+
+/* ================== HUD / ЛОГ ================== */
+function fmt(n) {
+  if (!Number.isFinite(n)) n = 0;
+  return Math.round(n).toLocaleString('ru-RU') + ' ₽';
+}
+function updateHUD() {
+  if (!Number.isFinite(state.money)) state.money = 0;
+  document.getElementById('money').textContent = fmt(state.money);
+  document.getElementById('rep').textContent = state.reputation;
+  document.getElementById('stock').textContent = state.stock;
+  const techCount = state.machines.filter(m => m.type === 'tech').length;
+  document.getElementById('techCount').textContent = techCount;
+  const disabled = !!state.placing;
+  ['buyTech','buyLathe','buyMill','buyHeat','buyGrind'].forEach(id => {
+    const key = id.replace('buy','').toLowerCase();
+    document.getElementById(id).classList.toggle('disabled',
+      state.money < MACHINE_TYPES[key].price || disabled);
+  });
+  const upEl = document.getElementById('valUpkeep');
+  if (upEl) upEl.textContent = '−' + totalUpkeep().toLocaleString('ru-RU') + ' ₽/10с';
+}
+function log(msg, cls = 'info') {
+  const t = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  state.log.unshift(`[${t}] ${msg}`);
+  if (state.log.length > 40) state.log.pop();
+  document.getElementById('log').innerHTML = state.log.map(l => {
+    let c = 'info';
+    if (l.includes('✅') || l.includes('🛒') || l.includes('📦') || l.includes('➡️')) c = 'ok';
+    if (l.includes('❌') || l.includes('💥') || l.includes('⏰') || l.includes('⚠️') || l.includes('💸')) c = 'bad';
+    if (l.includes('🏆') || l.includes('🔥')) c = 'event';
+    return `<div class="${c}">${l}</div>`;
+  }).join('');
+}
+let hintTimer;
+function showHint(t) {
+  const h = document.getElementById('hint');
+  h.textContent = t; h.classList.add('show');
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(hideHint, 3000);
+}
+function hideHint() { document.getElementById('hint').classList.remove('show'); }
+
+/* ================== ЦИКЛ ================== */
+function tick() {
+  const now = Date.now();
+  let need = false;
+  state.machines.forEach(m => {
+    if (!m.busy || !m.task) return;
+    const p = Math.min(1, (now - m.task.startedAt) / m.task.duration);
+    if (p !== m.progress) { m.progress = p; need = true; }
+    if (p >= 1) { finishTask(m); need = true; }
+  });
+  tickOrders();
+  updateDeadlines();
+  if (need) renderMachines();
+  requestAnimationFrame(tick);
+}
+
+/* ================== INIT ================== */
+function init() {
+  document.getElementById('iconTech').innerHTML  = MACHINE_ICON.tech;
+  document.getElementById('iconLathe').innerHTML = MACHINE_ICON.lathe;
+  document.getElementById('iconMill').innerHTML  = MACHINE_ICON.mill;
+  document.getElementById('iconHeat').innerHTML  = MACHINE_ICON.heat;
+  document.getElementById('iconGrind').innerHTML = MACHINE_ICON.grind;
+
+  state.machines.push({
+    id: state.nextMachineId++, type: 'tech',
+    col: 1, row: 5, rot: 0,
+    busy: false, reserved: false, progress: 0, task: null,
+  });
+  state.machines.push({
+    id: state.nextMachineId++, type: 'lathe',
+    col: 4, row: 2, rot: 0,
+    busy: false, reserved: false, progress: 0, task: null,
+  });
+
+  buildGrid();
+
+  document.getElementById('openMachines').addEventListener('click', () => openModal('modalMachines'));
+  document.querySelectorAll('[data-close]').forEach(btn => {
+    btn.addEventListener('click', () => closeModal(btn.dataset.close));
+  });
+  document.querySelectorAll('.modal-overlay').forEach(ov => {
+    ov.addEventListener('click', (e) => {
+      if (e.target === ov) closeModal(ov.id);
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.show').forEach(ov => closeModal(ov.id));
+    }
+  });
+
+  document.getElementById('buyTech').addEventListener('click',  () => startPlacing('tech'));
+  document.getElementById('buyLathe').addEventListener('click', () => startPlacing('lathe'));
+  document.getElementById('buyMill').addEventListener('click',  () => startPlacing('mill'));
+  document.getElementById('buyHeat').addEventListener('click',  () => startPlacing('heat'));
+  document.getElementById('buyGrind').addEventListener('click', () => startPlacing('grind'));
+
+  spawnOrder(); spawnOrder(); spawnOrder();
+
+  setInterval(() => {
+    if (state.orders.length < 5 && Math.random() < 0.6) spawnOrder();
+  }, 6000);
+
+  setInterval(dispatch, DISPATCH_INTERVAL_MS);
+  setInterval(sanitize, 1000);
+  setInterval(payMaintenance, MAINTENANCE_INTERVAL);
+  setInterval(drawChart, CHART_UPDATE_MS);
+
+  updateHUD();
+  renderOrders();
+  renderQueue();
+  drawChart();
+  log('🏁 На старте простые заказы. Ставь станки — откроются сложные!', 'event');
+  tick();
+}
+
+init();
+</script>
+</body>
+</html>
